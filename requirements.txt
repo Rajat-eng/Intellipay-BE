@@ -1,0 +1,8 @@
+fastapi
+uvicorn[standard]
+sqlalchemy
+psycopg2-binary
+python-dotenv
+sqlalchemy-redshift
+redshift-connector
+setuptools<81
