@@ -1,4 +1,5 @@
 import os
+from urllib.parse import urlparse
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
@@ -7,6 +8,28 @@ import redshift_connector
 load_dotenv()
 
 app = FastAPI(title="Intellipay API", version="1.0.0")
+
+
+def parse_redshift_host(raw_host: str, default_port: int) -> tuple[str, int]:
+    host_value = raw_host.strip()
+    if not host_value:
+        raise HTTPException(status_code=500, detail="REDSHIFT_HOST cannot be empty")
+
+    if "://" not in host_value:
+        return host_value, default_port
+
+    normalized_url = host_value
+    if normalized_url.startswith("jdbc:"):
+        normalized_url = normalized_url.removeprefix("jdbc:")
+
+    parsed = urlparse(normalized_url)
+    if parsed.scheme != "redshift" or not parsed.hostname:
+        raise HTTPException(
+            status_code=500,
+            detail="REDSHIFT_HOST must be a hostname or a jdbc:redshift:// URL",
+        )
+
+    return parsed.hostname, parsed.port or default_port
 
 
 def get_redshift_config() -> dict[str, str | int | bool]:
@@ -21,6 +44,8 @@ def get_redshift_config() -> dict[str, str | int | bool]:
         missing_csv = ", ".join(missing)
         raise HTTPException(status_code=500, detail=f"Missing environment variables: {missing_csv}")
 
+    default_port = int(os.getenv("REDSHIFT_PORT", "5439"))
+    host, port = parse_redshift_host(os.environ["REDSHIFT_HOST"], default_port)
     sslmode = os.getenv("REDSHIFT_SSLMODE", "require").lower()
     ssl_enabled = os.getenv("REDSHIFT_SSLMODE", "require").lower() != "disable"
     timeout = int(os.getenv("REDSHIFT_CONNECT_TIMEOUT", "10"))
@@ -29,8 +54,8 @@ def get_redshift_config() -> dict[str, str | int | bool]:
         raise HTTPException(status_code=500, detail="REDSHIFT_SSLMODE must be either require or disable")
 
     return {
-        "host": os.environ["REDSHIFT_HOST"],
-        "port": int(os.getenv("REDSHIFT_PORT", "5439")),
+        "host": host,
+        "port": port,
         "database": os.environ["REDSHIFT_DB"],
         "user": os.environ["REDSHIFT_USER"],
         "password": os.environ["REDSHIFT_PASSWORD"],
